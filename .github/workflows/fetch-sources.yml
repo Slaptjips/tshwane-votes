@@ -4,6 +4,10 @@ name: Fetch sources
 # commits the Tshwane extracts back to the branch. Also probes the IEC 2026 results endpoint.
 on:
   workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma-separated steps (empty = all)"
+        required: false
   push:
     paths:
       - pipeline/fetch_sources.py
@@ -23,6 +27,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 pipeline/fetch_sources.py
+        env:
+          STEPS: ${{ inputs.steps || 'mdb_vds,mdb_stations,osm_places,iec_2026_probe' }}
       - name: Commit extracts
         run: |
           git config user.name "github-actions[bot]"

@@ -45,6 +45,7 @@ def step(fn):
         except Exception as e:  # noqa: BLE001
             report[fn.__name__] = {"ok": False, "error": repr(e), "trace": traceback.format_exc()[-1500:]}
         print(fn.__name__, json.dumps(report[fn.__name__])[:400], flush=True)
+    run.__name__ = fn.__name__
     return run
 
 
@@ -141,20 +142,79 @@ def osm_places():
     area["name"="City of Tshwane Metropolitan Municipality"]["boundary"="administrative"]->.a;
     (node["place"~"^(city|town|suburb|township|village|quarter|neighbourhood)$"](area.a););
     out body;"""
-    raw, _, _ = get("https://overpass-api.de/api/interpreter", data=urllib.parse.urlencode({"data": q}).encode())
-    els = json.loads(raw)["elements"]
+    body = urllib.parse.urlencode({"data": q}).encode()
+    last = None
+    for ep in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+               "https://overpass.private.coffee/api/interpreter"):
+        try:
+            req = urllib.request.Request(ep, data=body, headers={
+                **UA, "Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                els = json.loads(r.read())["elements"]
+            break
+        except Exception as e:  # noqa: BLE001
+            last = e
+    else:
+        raise last
     places = [{"name": e["tags"].get("name"), "type": e["tags"].get("place"), "lon": round(e["lon"], 5),
                "lat": round(e["lat"], 5), "pop": e["tags"].get("population")} for e in els if e["tags"].get("name")]
     (SOURCE / "osm_places.json").write_text(json.dumps(places, separators=(",", ":"), ensure_ascii=False))
     return {"places": len(places)}
 
 
+TSH_BBOX = "27.85,-26.10,29.10,-25.10"   # generous lon/lat envelope around Tshwane
+
+
+def arcgis_bbox(service, name, where="1=1", offset=0.00004):
+    """All features of an MDB layer intersecting the Tshwane envelope (paged), raw properties kept."""
+    base = f"{MDB}/{service}/FeatureServer/0"
+    raw, _, _ = get(base, {"f": "json"})
+    layer = json.loads(raw)
+    (PROBE / f"{service}_fields.json").write_text(json.dumps(
+        [(f["name"], f["type"]) for f in layer.get("fields", [])], indent=0))
+    feats, start = [], 0
+    while True:
+        raw, _, _ = get(f"{base}/query", {
+            "where": where, "geometry": TSH_BBOX, "geometryType": "esriGeometryEnvelope", "inSR": 4326,
+            "spatialRel": "esriSpatialRelIntersects", "outFields": "*", "outSR": 4326,
+            "maxAllowableOffset": offset, "geometryPrecision": 5, "resultOffset": start,
+            "resultRecordCount": 1000, "f": "geojson"})
+        page = json.loads(raw).get("features", [])
+        feats += page
+        if len(page) < 1000:
+            break
+        start += 1000
+    out = SOURCE / name
+    out.write_text(json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")))
+    return {"features": len(feats), "bytes": out.stat().st_size,
+            "sample_props": feats[0]["properties"] if feats else None}
+
+
+@step
+def mdb_vds():
+    return arcgis_bbox("VotingDistricts2026_Final", "mdb_vds2026_bbox.geojson")
+
+
+@step
+def mdb_stations():
+    return arcgis_bbox("VotingStations_March2026", "mdb_stations2026_bbox.geojson")
+
+
+STEPS = {f.__name__: f for f in (mdb_wards, mdb_services, mdb_vds, mdb_stations, osm_places, iec_2026_probe,
+                                  iec_2021, iec_2016)}
+
+
 def main():
+    import os
     PROBE.mkdir(parents=True, exist_ok=True)
     SOURCE.mkdir(parents=True, exist_ok=True)
-    for s in (mdb_wards, mdb_services, osm_places, iec_2026_probe, iec_2021, iec_2016):
-        s()
-    (PROBE / "report.json").write_text(json.dumps(report, indent=1, default=str))
+    rp = PROBE / "report.json"
+    if rp.exists():
+        report.update(json.loads(rp.read_text()))
+    wanted = [w for w in os.environ.get("STEPS", "").split(",") if w] or list(STEPS)
+    for name in wanted:
+        STEPS[name]()
+    rp.write_text(json.dumps(report, indent=1, default=str))
 
 
 if __name__ == "__main__":
