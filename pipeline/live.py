@@ -158,16 +158,27 @@ def build(vds, names, src):
     for wid, w in wards.items():
         top = sorted(names.get(wid, {}).items(), key=lambda kv: -kv[1])[:TOP_N]
         w["top"] = [[p, v] for p, v in top]
+    # the IEC file may list only districts captured so far: take totals from the 2026 delimitation
+    expected = {}
+    sp = SITE_DATA / "static.json"
+    if sp.exists():
+        st = json.loads(sp.read_text())
+        expected = {w["id"]: w["nvd"] for w in st["wards"]}
+    for wid, n in expected.items():
+        w = wards.setdefault(wid, {"N": 0, "n": 0, "npr": 0, "reg": 0, "regN": 0, "v": [0] * len(GROUPS),
+                                   "pr": [0] * len(GROUPS), "sp": 0, "top": []})
+        w["N"] = max(w["N"], n)
+    total = max(len(vds), sum(expected.values()))
     counted = sum(1 for r in vds.values() if sum(r["ward"]) > 0)
     city_w = [sum(w["v"][i] for w in wards.values()) for i in range(len(GROUPS))]
     city_pr = [sum(w["pr"][i] for w in wards.values()) for i in range(len(GROUPS))]
-    status = "pre" if counted == 0 else ("final" if counted == len(vds) else "counting")
+    status = "pre" if counted == 0 else ("final" if counted >= total else "counting")
     return {
         "status": status, "updated": now(), "fetched": now(), "source": src, "simulated": False,
-        "groups": GROUPS, "vdsTotal": len(vds), "vdsCounted": counted,
+        "groups": GROUPS, "vdsTotal": total, "vdsCounted": counted,
         "reg": sum(r["reg"] for r in vds.values()),
         "city": {"ward": city_w, "pr": city_pr},
-        "wards": wards,
+        "wards": {k: v for k, v in wards.items() if v["N"]},
         # per-VD ward-ballot votes for the browser nowcast; only reported VDs
         "vd": {vd: r["ward"] for vd, r in vds.items() if sum(r["ward"]) > 0},
         "error": None,

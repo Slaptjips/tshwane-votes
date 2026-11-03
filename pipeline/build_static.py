@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import shape
 
-from common import GROUPS, MUNI_NAME, SITE_DATA, SOURCE, group_of
+from common import GROUPS, MUNI, MUNI_NAME, SITE_DATA, SOURCE, group_of
 
 ELECTIONS = {
     "lge2021_ward": {"label": "2021 local · ward ballot", "short": "2021 ward", "date": "2021-11-01"},
@@ -22,13 +22,27 @@ ELECTIONS = {
     "lge2016_pr": {"label": "2016 local · PR ballot", "short": "2016 PR", "date": "2016-08-03"},
 }
 TOP_N = 8
+MAJOR_PLACES = {
+    "Mamelodi", "Soshanguve", "Atteridgeville", "Centurion", "Hammanskraal", "Ga-Rankuwa", "Mabopane", "Akasia",
+    "Laudium", "Olievenhoutbosch", "Bronkhorstspruit", "Cullinan", "Rayton", "Garsfontein", "Montana", "Sunnyside",
+    "Arcadia", "Pretoria North", "Wonderboom", "Eersterust", "Saulsville", "Winterveld", "Temba", "Refilwe",
+    "Ekangala", "Zithobeni", "Waterkloof", "Silverton", "Hatfield", "Lotus Gardens", "Irene", "Faerie Glen",
+    "Moreleta Park", "Pretoria", "Lyttelton", "Kwaggasrand", "Danville", "Pretoria West", "Sinoville", "Theresapark",
+    "Rosslyn", "Nellmapius", "Stinkwater", "Babelegi", "Dilopye", "Kekana Gardens", "Eersterus", "Soshanguve South",
+}
+
+
+def round_geom(g, nd=5):
+    def r(c):
+        return [round(c[0], nd), round(c[1], nd)] if isinstance(c[0], (int, float)) else [r(x) for x in c]
+    return {"type": g["type"], "coordinates": r(g["coordinates"])}
 
 
 def vec(d):
     return [int(d.get(g, 0)) for g in GROUPS]
 
 
-def hex_layout(points, fill=1.7, seed_w=0.55):
+def hex_layout(points, fill=1.35, seed_w=0.5):
     """Assign each point to a cell of a pointy-top hex grid (odd rows shifted right), keeping
     geography recognisable while giving every ward the same area."""
     from scipy.optimize import linear_sum_assignment
@@ -70,7 +84,8 @@ def main():
     meta = pd.read_csv(SOURCE / "tsh_vd_meta.csv", dtype={"vd": str, "ward": str})
     votes = pd.read_csv(SOURCE / "tsh_vd_votes.csv", dtype={"vd": str})
     votes["grp"] = votes.party.map(group_of)
-    gj = json.load(open(SOURCE / "tsh_wards2026.geojson"))
+    hi = SOURCE / "mdb_tsh_wards2026.geojson"   # MDB direct (fetch_sources.py); else the bootstrap copy
+    gj = json.load(open(hi if hi.exists() else SOURCE / "tsh_wards2026.geojson"))
     cand = pd.read_csv(SOURCE / "tsh_candidates_2026.csv", dtype=str)
 
     wards = sorted(m26.ward.unique())
@@ -107,7 +122,7 @@ def main():
         city[e] = {
             "v": vec(ct),
             "reg": int(meta[(meta.election == e) & meta.vd.isin(allv.vd.unique())].registered.sum()),
-            "top": [[p, int(x)] for p, x in top_city.head(14).items()],
+            "all": [[p, group_of(p), int(x)] for p, x in top_city.items() if x > 0],
         }
 
     # ---- VD baselines for the election-night nowcast
@@ -141,6 +156,55 @@ def main():
     cnt = cand.groupby("ward").size()
     ind = cand[cand.party.str.upper().str.startswith("INDEPENDENT")].groupby("ward").size()
 
+    # ---- voting-district polygons, station names, places (from fetch_sources.py when present)
+    vd_names, places, ward_places = {}, [], {w: [] for w in wards}
+    vdf = SOURCE / "mdb_vds2026_bbox.geojson"
+    if vdf.exists():
+        vg = json.load(open(vdf))
+        feats_vd = []
+        for f in vg["features"]:
+            pr = f["properties"]
+            if pr.get("MunicCode") != MUNI or str(pr.get("VDNumber")) not in vd_ward:
+                continue
+            vd = str(pr["VDNumber"])
+            vd_names[vd] = (pr.get("VotingStat") or "").strip()
+            feats_vd.append({"type": "Feature", "properties": {"vd": vd, "w": vd_ward[vd]},
+                             "geometry": round_geom(f["geometry"])})
+        json.dump({"type": "FeatureCollection", "features": feats_vd}, open(SITE_DATA / "vds.geojson", "w"),
+                  separators=(",", ":"))
+        print("vds.geojson", len(feats_vd), round((SITE_DATA / "vds.geojson").stat().st_size / 1e3), "KB")
+    plf = SOURCE / "osm_places.json"
+    if plf.exists():
+        from shapely.geometry import Point
+        shapes = {w: shape(feats[w]["geometry"]) for w in wards}
+        seen = set()
+        for pl in json.load(open(plf)):
+            pt = Point(pl["lon"], pl["lat"])
+            w = next((w for w, sh in shapes.items() if sh.contains(pt)), None)
+            if not w or pl["name"].lower() in seen:
+                continue
+            seen.add(pl["name"].lower())
+            major = pl["type"] in ("city", "town") or pl["name"] in MAJOR_PLACES
+            rank = {"city": 3, "town": 2}.get(pl["type"], 1 if pl["name"] in MAJOR_PLACES else 0)
+            places.append({"name": pl["name"], "lon": pl["lon"], "lat": pl["lat"], "ward": w, "major": major, "r": rank})
+            ward_places[w].append((not major, pl["name"]))
+        stf = SOURCE / "mdb_stations2026_bbox.geojson"
+        if stf.exists():
+            sub = {}
+            for f in json.load(open(stf))["features"]:
+                pr = f["properties"]
+                if pr.get("MUNICCODE") != MUNI:
+                    continue
+                for nm in {pr.get("SUBURB"), pr.get("TOWN")}:
+                    nm = " ".join(str(nm or "").split()).title()
+                    if len(nm) > 2 and nm.lower() not in seen:
+                        sub.setdefault(nm, []).append(str(pr["WARDID"]))
+            for nm, ws in sub.items():
+                w = max(set(ws), key=ws.count)
+                if w in widx:
+                    places.append({"name": nm, "ward": w})
+        print("places", len(places), "major", sum(1 for p in places if p.get("major")))
+
     out_wards = []
     for i, w in enumerate(wards):
         s = shape(feats[w]["geometry"])
@@ -150,6 +214,7 @@ def main():
             "km2": round(s.area * (111.32 ** 2) * math.cos(lat0), 1),
             "hex": hexes[i],
             "cands": int(cnt.get(w, 0)), "ind": int(ind.get(w, 0)),
+            "places": [n for _, n in sorted(ward_places[w])][:8],
             "h": hist[w],
         })
 
@@ -166,11 +231,13 @@ def main():
         "muni": MUNI_NAME, "groups": GROUPS, "elections": ELECTIONS,
         "electionDay": "2026-11-04", "seats": 214, "wardSeats": 107,
         "wards": out_wards, "city": city, "vds": vds, "polls": polls,
+        "vdNames": vd_names, "places": places,
         "sources": [
             {"name": "IEC results (LGE 2016, 2021; NPE 2024), per voting district", "url": "https://results.elections.org.za/"},
             {"name": "IEC 2026 ward → voting district delimitation", "url": "https://results.elections.org.za/home/Downloads/ME-Results"},
             {"name": "Municipal Demarcation Board 2026 ward boundaries", "url": "https://spatialhub-mdb-sa.opendata.arcgis.com/"},
-            {"name": "Processed via gavacharles/lge2026-ward-forecast (IEC/MDB extracts)", "url": "https://github.com/gavacharles/lge2026-ward-forecast"},
+            {"name": "OpenStreetMap place names", "url": "https://www.openstreetmap.org/copyright"},
+            {"name": "VD results and 2026 ward-VD list first extracted via gavacharles/lge2026-ward-forecast; checked against IEC/MDB originals", "url": "https://github.com/gavacharles/lge2026-ward-forecast"},
         ],
     }
     SITE_DATA.mkdir(parents=True, exist_ok=True)
@@ -178,6 +245,7 @@ def main():
 
     for f in gj["features"]:
         f["properties"] = {"id": f["properties"]["ward"], "no": f["properties"]["no"]}
+        f["geometry"] = round_geom(f["geometry"])
     json.dump(gj, open(SITE_DATA / "wards.geojson", "w"), separators=(",", ":"))
 
     # ---- report

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tshwane Votes 2026</title>
+<meta name="description" content="Ward-by-ward map of the City of Tshwane 2026 municipal election: past results, poll projections and the live IEC count.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<!--APP-START-->
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Tshwane <b>Votes</b> 2026</h1>
+      <span class="sub">City of Tshwane municipal election · 107 wards · 214 seats · 4 November 2026</span>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+  <nav class="bar2" aria-label="View controls">
+    <div class="tabs" role="group" aria-label="Mode">
+      <button id="tab-live" data-mode="live" aria-pressed="false"><span class="dot"></span>Live count</button>
+      <button id="tab-projection" data-mode="projection" aria-pressed="false">Polls &amp; projection</button>
+      <button id="tab-results" data-mode="results" aria-pressed="false">Past results</button>
+    </div>
+    <label class="ctrl" id="pastctrl" hidden><span class="lab">Election</span>
+      <select id="past"></select>
+    </label>
+    <label class="ctrl"><span class="lab">Colour by</span>
+      <select id="colorby"></select>
+    </label>
+    <label class="ctrl" id="partyctrl" hidden><span class="lab">Party</span>
+      <select id="party"></select>
+    </label>
+    <span class="spacer"></span>
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+      <label for="q" class="sr">Find a ward or place</label>
+      <input id="q" type="search" placeholder="Ward no. or place" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="qres">
+      <ul id="qres" role="listbox" hidden></ul>
+    </div>
+  </nav>
+  <main class="main">
+    <section class="mapwrap" aria-label="Ward map">
+      <div id="map"></div>
+      <div id="hex" hidden></div>
+      <div class="maptools">
+        <div class="seg" role="group" aria-label="Map type">
+          <button id="v-geo" aria-pressed="true">Map</button>
+          <button id="v-hex" aria-pressed="false">Equal wards</button>
+        </div>
+        <div class="seg" role="group" aria-label="Map detail" id="lvlctrl">
+          <button id="l-w" aria-pressed="true">Wards</button>
+          <button id="l-vd" aria-pressed="false">Voting districts</button>
+        </div>
+        <div class="seg" role="group" aria-label="Basemap" id="basectrl">
+          <button id="b-on" aria-pressed="true">Streets</button>
+          <button id="b-off" aria-pressed="false">Plain</button>
+        </div>
+      </div>
+      <div class="banner" id="banner" hidden></div>
+      <div class="legend" id="legend"></div>
+      <div class="timeline" id="timeline" hidden>
+        <button class="iconbtn" id="tl-play" aria-label="Replay the count">▶</button>
+        <input type="range" id="tl" min="0" max="0" value="0" aria-label="Count timeline">
+        <div class="lbl"><span id="tl-l"></span><span id="tl-r"></span></div>
+      </div>
+    </section>
+    <aside class="rail" id="rail" aria-label="Results"></aside>
+  </main>
+</div>
+<!--APP-END-->
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
