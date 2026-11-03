@@ -1,0 +1,90 @@
+{
+ "mdb_wards": {
+  "ok": true,
+  "features": 107,
+  "bytes": 161017
+ },
+ "mdb_services": {
+  "ok": true,
+  "count": 46,
+  "vd_like": [
+   "VotingDistricts_March2026",
+   "VotingDistricts2026",
+   "VotingDistricts2026_Final",
+   "VotingStations_March2026"
+  ]
+ },
+ "osm_places": {
+  "ok": false,
+  "error": "<HTTPError 406: 'Not Acceptable'>",
+  "trace": "rt[fn.__name__] = {\"ok\": True, **(fn() or {})}\n                                          ^^^^\n  File \"/home/runner/work/sandput/sandput/pipeline/fetch_sources.py\", line 144, in osm_places\n    raw, _, _ = get(\"https://overpass-api.de/api/interpreter\", data=urllib.parse.urlencode({\"data\": q}).encode())\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/sandput/sandput/pipeline/fetch_sources.py\", line 37, in get\n    with urllib.request.urlopen(req, timeout=timeout) as r:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 215, in urlopen\n    return opener.open(url, data, timeout)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 521, in open\n    response = meth(req, response)\n               ^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 630, in http_response\n    response = self.parent.error(\n               ^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 559, in error\n    return self._call_chain(*args)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 492, in _call_chain\n    result = func(*args)\n             ^^^^^^^^^^^\n  File \"/usr/lib/python3.12/urllib/request.py\", line 639, in http_error_default\n    raise HTTPError(req.full_url, code, msg, hdrs, fp)\nurllib.error.HTTPError: HTTP Error 406: Not Acceptable\n"
+ },
+ "iec_2026_probe": {
+  "ok": true,
+  "status": 404
+ },
+ "iec_2021": {
+  "ok": true,
+  "bytes_total": 27498402,
+  "header": [
+   "Province",
+   "Municipality",
+   "Ward",
+   "VotingDistrict",
+   "VotingStationName",
+   "RegisteredVoters",
+   "BallotType",
+   "SpoiltVotes",
+   "PartyName",
+   "TotalValidVotes",
+   "DateGenerated"
+  ],
+  "tsh_rows": 56677,
+  "vds": 778,
+  "ward_shares": {
+   "ANC": 34.42,
+   "DA": 32.29,
+   "EFF": 10.94,
+   "ASA": 7.99,
+   "FFP": 7.96,
+   "MK": 0.0,
+   "PA": 0.52,
+   "ACDP": 0.93,
+   "IND": 1.43,
+   "OTH": 3.51
+  },
+  "last_modified": "Tue, 23 Nov 2021 14:23:22 GMT"
+ },
+ "iec_2016": {
+  "ok": true,
+  "bytes_total": 13873346,
+  "header": [
+   "Province",
+   "Municipality",
+   "Ward",
+   "VotingDistrict",
+   "VotingStationName",
+   "RegisteredVoters",
+   "BallotType",
+   "SpoiltVotes",
+   "PartyName",
+   "TotalValidVotes",
+   "DateGenerated"
+  ],
+  "tsh_rows": 24611,
+  "vds": 732,
+  "ward_shares": {
+   "ANC": 41.02,
+   "DA": 43.2,
+   "EFF": 11.62,
+   "ASA": 0.0,
+   "FFP": 2.02,
+   "MK": 0.0,
+   "PA": 0.05,
+   "ACDP": 0.52,
+   "IND": 0.59,
+   "OTH": 0.99
+  },
+  "last_modified": "Thu, 16 Feb 2017 15:02:55 GMT"
+ }
+}
