@@ -1,0 +1,34 @@
+name: Fetch sources
+
+# Pulls primary data (IEC results files, MDB ward boundaries, OSM place names) for Tshwane and
+# commits the Tshwane extracts back to the branch. Also probes the IEC 2026 results endpoint.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - pipeline/fetch_sources.py
+      - .github/workflows/fetch-sources.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fetch-sources-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 pipeline/fetch_sources.py
+      - name: Commit extracts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/source data/probe
+          git diff --cached --quiet && exit 0
+          git commit -m "Fetch primary sources (IEC, MDB, OSM)"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && exit 0; sleep 5; done
+          exit 1
