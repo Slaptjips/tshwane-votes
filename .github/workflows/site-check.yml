@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: read
 
 jobs:
   check:
@@ -15,9 +16,17 @@ jobs:
     env:
       BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
     steps:
-      - name: Request files
+      - name: Pages configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir out
+          gh api "repos/${{ github.repository }}/pages" > out/pages.json 2>&1 || true
+          gh api "repos/${{ github.repository }}/pages/builds/latest" > out/pages-build.json 2>&1 || true
+          gh api "repos/${{ github.repository }}" --jq '{private, visibility, has_pages}' > out/repo.json 2>&1 || true
+          cat out/pages.json out/repo.json
+      - name: Request files
+        run: |
           for p in "" assets/app.js assets/style.css vendor/leaflet/leaflet.js vendor/leaflet/leaflet.css \
                    data/static.json data/wards.geojson data/vds.geojson data/live.json data/live-history.json; do
             curl -s -o /dev/null -w "%{http_code} %{size_download}B /$p\n" "$BASE/$p?cb=$GITHUB_RUN_ID" | tee -a out/status.txt
