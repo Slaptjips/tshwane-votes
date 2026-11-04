@@ -30,7 +30,7 @@ from common import EVENT_LGE2026, GROUPS, MUNI, SITE_DATA, group_of  # noqa: E40
 
 DEFAULT_SRC = ("https://results.elections.org.za/home/LGEPublicReports/{ev}/"
                "Downloadable%20Party%20Results/GP.csv").format(ev=EVENT_LGE2026)
-UA = "Mozilla/5.0 (compatible; tshwane-election-map/1.0; +https://github.com/Slaptjips/sandput)"
+UA = "Mozilla/5.0 (compatible; tshwane-election-map/1.0; +https://github.com/Slaptjips/tshwane-votes)"
 TOP_N = 10
 HISTORY_MAX = 600
 

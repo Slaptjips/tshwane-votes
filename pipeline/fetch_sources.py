@@ -24,7 +24,7 @@ from common import EVENT_LGE2016, EVENT_LGE2021, EVENT_LGE2026, ROOT, SOURCE  # 
 import live  # noqa: E402
 
 PROBE = ROOT / "data" / "probe"
-UA = {"User-Agent": "Mozilla/5.0 (compatible; tshwane-election-map/1.0; +https://github.com/Slaptjips/sandput)"}
+UA = {"User-Agent": "Mozilla/5.0 (compatible; tshwane-election-map/1.0; +https://github.com/Slaptjips/tshwane-votes)"}
 MDB = "https://services7.arcgis.com/oeoyTUJC8HEeYsRB/arcgis/rest/services"
 IEC = "https://results.elections.org.za/home/LGEPublicReports/{ev}/Downloadable%20Party%20Results/GP.csv"
 report = {}

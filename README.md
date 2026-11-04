@@ -55,8 +55,7 @@ python3 pipeline/live.py                      # fetch the live IEC file once
 python3 pipeline/live.py --src FILE_OR_URL    # any IEC-format CSV (e.g. the 2021 file, for testing)
 ```
 
-**Hosting:** GitHub Pages from `main` → `/docs` (Settings → Pages). Pages on a private repository needs a paid
-plan; otherwise make the repository public.
+**Hosting:** GitHub Pages from `main` → `/docs` (Settings → Pages): https://slaptjips.github.io/tshwane-votes/
 
 **Election night:** `.github/workflows/live-results.yml` runs every 5 minutes from 19:00 SAST on 4 Nov to
 7 Nov (scheduled workflows only run on the default branch). If the IEC changes its file location, run the
