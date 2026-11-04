@@ -4,6 +4,11 @@ name: Site check
 # screenshots (desktop + phone) and browser console output. Results go to the `site-check` branch.
 on:
   workflow_dispatch:
+    inputs:
+      url:
+        description: "Site URL to check"
+        required: false
+        default: https://tshwane-votes.pages.dev
 
 permissions:
   contents: write
@@ -14,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+      BASE: ${{ inputs.url || 'https://tshwane-votes.pages.dev' }}
     steps:
       - name: Pages configuration
         env:

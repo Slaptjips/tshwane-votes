@@ -1,0 +1,45 @@
+name: Deploy site
+
+# Publishes docs/ to Cloudflare Pages (https://tshwane-votes.pages.dev) whenever the site changes.
+# Live-result commits made by the "Live results" job deploy from that job, because pushes made with
+# the Actions token do not start other workflows.
+# Needs repository secrets CLOUDFLARE_API_TOKEN (permission: Account > Cloudflare Pages > Edit)
+# and CLOUDFLARE_ACCOUNT_ID.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        if: env.CF_TOKEN == ''
+        run: echo "::warning::Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets to deploy." 
+      - name: Create the Pages project (first run only)
+        if: env.CF_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create tshwane-votes --production-branch=main
+      - name: Deploy docs/
+        if: env.CF_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy docs --project-name=tshwane-votes --branch=main --commit-dirty=true
