@@ -256,7 +256,7 @@ function seatsFromWardShares(P, E, prShares) {
   return { seats: allocate(comb, wins), wins, wv, pr };
 }
 
-function project() {
+function project(nSims = N_SIMS) {
   const { B, E } = baseline();
   const tg = targetShares();
   const P = fit(B, E, tg.T);
@@ -270,7 +270,7 @@ function project() {
     const sdpp = Math.sqrt((tg.sd[g] || 2.5) ** 2 + 2 ** 2);
     return clamp(sdpp / Math.max(1, tg.T[k] * 100), 0.04, 0.6);
   });
-  for (let s = 0; s < N_SIMS; s++) {
+  for (let s = 0; s < nSims; s++) {
     const f = sigma.map((sg) => Math.exp(r.normal() * sg - (sg * sg) / 2));
     const Ps = P.map((row) => {
       const x = row.map((v, k) => v * f[k] * Math.exp(r.normal() * 0.2));
@@ -284,13 +284,13 @@ function project() {
     const tv = sum(res.wv);
     shareSims.push(res.wv.map((v) => v / tv));
   }
-  const winProb = win.map((row) => Array.from(row, (x) => x / N_SIMS));
+  const winProb = win.map((row) => Array.from(row, (x) => x / nSims));
   const q = (arr, p) => { const a = arr.slice().sort((x, y) => x - y); return a[Math.floor(p * (a.length - 1))]; };
   const seatQ = G.map((g, k) => { const col = seatSims.map((s) => s[k]); return { lo: q(col, 0.1), med: q(col, 0.5), hi: q(col, 0.9) }; });
   const shareQ = G.map((g, k) => { const col = shareSims.map((s) => s[k]); return { lo: q(col, 0.1), hi: q(col, 0.9) }; });
   const largest = new Array(K).fill(0);
   seatSims.forEach((s) => { let b = 0; for (let k = 1; k < K; k++) if (s[k] > s[b]) b = k; largest[b]++; });
-  return { B, E, P, T: tg.T, avg: tg.avg, sd: tg.sd, central, winProb, seatSims, seatQ, shareQ, largest: largest.map((x) => x / N_SIMS) };
+  return { B, E, P, T: tg.T, avg: tg.avg, sd: tg.sd, central, winProb, seatSims, seatQ, shareQ, largest: largest.map((x) => x / nSims), nSims };
 }
 
 // ---------------------------------------------------------------- live nowcast
@@ -546,7 +546,8 @@ function tipHTML(i) {
 }
 
 // ---------------------------------------------------------------- geo map
-let map, wardLayer, labelLayer, placeLayer, tiles, layers = [];
+let fitting = false;
+let map, wardLayer, labelLayer, placeLayer, tiles, layers = [], labelMarkers = [], userMoved = false;
 function initMap() {
   map = L.map('map', { zoomControl: true, attributionControl: true, preferCanvas: false, zoomSnap: 0.25, minZoom: 8, maxZoom: 16 });
   map.attributionControl.setPrefix(false);
@@ -556,6 +557,7 @@ function initMap() {
     onEachFeature: (f, lyr) => {
       const i = WI[f.properties.id];
       layers[i] = lyr;
+      lyr.on('add', () => { if (lyr._path) { lyr._path.setAttribute('tabindex', '-1'); lyr._path.setAttribute('aria-hidden', 'true'); } });
       lyr.bindTooltip(() => tipHTML(i), { sticky: true, className: 'tt', direction: 'top', offset: [0, -8] });
       lyr.on('click', () => select(W[i].id, false));
       lyr.on('mouseover', () => { lyr.setStyle({ weight: 2.5, color: C.ink }); lyr.bringToFront(); });
@@ -563,8 +565,13 @@ function initMap() {
     },
   }).addTo(map);
   map.fitBounds(wardLayer.getBounds(), { padding: [10, 10] });
+  map.on('dragstart zoomstart', (e) => { if (!fitting) userMoved = true; });
+  if (window.ResizeObserver) new ResizeObserver(() => {
+    map.invalidateSize();
+    if (!userMoved && S.view === 'geo') { fitting = true; map.fitBounds(wardLayer.getBounds(), { padding: [10, 10], animate: false }); fitting = false; }
+  }).observe($('#map'));
   map.createPane('labels'); map.getPane('labels').style.zIndex = 650; map.getPane('labels').style.pointerEvents = 'none';
-  labelLayer = L.layerGroup(W.map((w) => L.marker([w.c[1], w.c[0]], {
+  labelLayer = L.layerGroup(W.map((w, i) => labelMarkers[i] = L.marker([w.c[1], w.c[0]], {
     pane: 'labels', interactive: false, keyboard: false,
     icon: L.divIcon({ className: 'ward-lbl', html: String(w.no), iconSize: [24, 12], iconAnchor: [12, 6] }),
   })));
@@ -625,6 +632,14 @@ function styleWard(i) {
     });
   }
   if (sel) lyr.bringToFront();
+  const lm = labelMarkers[i] && labelMarkers[i].getElement();
+  if (lm) lm.classList.toggle('dark', !S.vdOn && contrastPick(st.fill) === 'dark');
+}
+function contrastPick(fill) {
+  // pick the ward-number colour with the better WCAG contrast against the fill
+  const rl = (h) => hex2rgb(h).map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((a, c, j) => a + c * [0.2126, 0.7152, 0.0722][j], 0);
+  const L = rl(fill);
+  return (1.05) / (L + 0.05) >= (L + 0.05) / (rl('#17141f') + 0.05) ? 'light' : 'dark';
 }
 
 // ---------------------------------------------------------------- voting-district layer
@@ -707,8 +722,8 @@ function initHex() {
     return 'M' + pts.join('L') + 'Z';
   };
   const el = $('#hex');
-  el.innerHTML = `<svg viewBox="${vb.join(' ')}" role="img" aria-label="Equal-area ward map: each hexagon is one ward">
-    ${W.map((w, i) => `<g class="hx" data-i="${i}" tabindex="0" role="button" aria-label="Ward ${w.no}"><path d="${hexPath(...pos[i])}" class="ward"></path><text x="${pos[i][0].toFixed(1)}" y="${(pos[i][1] + 2.6).toFixed(1)}" text-anchor="middle" font-size="7" font-weight="600" pointer-events="none">${w.no}</text></g>`).join('')}
+  el.innerHTML = `<svg viewBox="${vb.join(' ')}" role="img" aria-label="Equal-area ward map: each hexagon is one ward. Use the ward table or search to open a ward with the keyboard.">
+    ${W.map((w, i) => `<g class="hx" data-i="${i}"><path d="${hexPath(...pos[i])}" class="ward"></path><text x="${pos[i][0].toFixed(1)}" y="${(pos[i][1] + 2.6).toFixed(1)}" text-anchor="middle" font-size="7" font-weight="600" pointer-events="none">${w.no}</text></g>`).join('')}
   </svg>`;
   hexSVG = el.querySelector('svg');
   hexTip = document.createElement('div'); hexTip.className = 'hextt tt'; hexTip.hidden = true; el.appendChild(hexTip);
@@ -735,7 +750,7 @@ function styleHex() {
     p.setAttribute('fill', st.fill);
     p.setAttribute('stroke', sel ? C.ink : 'none');
     p.setAttribute('stroke-width', sel ? 1.6 : 0);
-    t.setAttribute('fill', luminance(st.fill) > 0.6 ? '#17141f' : '#ffffff');
+    t.setAttribute('fill', contrastPick(st.fill) === 'dark' ? '#17141f' : '#ffffff');
     g.classList.toggle('flash', S.changed.has(W[i].id));
   });
 }
@@ -759,10 +774,10 @@ function renderLegend() {
   let h = '';
   if (cb === 'share' || cb === 'prob') {
     const cols = SEQ.map((t) => seqColour(pc(S.party), t));
-    h = `<div class="t">${NAMES[S.party]} ${cb === 'prob' ? 'win chance' : 'vote share'}</div>${ramp(cols)}<div class="ends">${cb === 'prob' ? '<span>&lt;10%</span><span>50%</span><span>90%+</span>' : '<span>0%</span><span>25%</span><span>50%+</span>'}</div>`;
+    h = `<div class="t">${NAMES[S.party]} ${cb === 'prob' ? 'win chance' : 'vote share'}</div><div class="extra">${ramp(cols)}<div class="ends">${cb === 'prob' ? '<span>&lt;10%</span><span>50%</span><span>90%+</span>' : '<span>0%</span><span>25%</span><span>50%+</span>'}</div></div>`;
   } else if (cb === 'swing') {
     const cols = [mix(C.neg, C.mid, 1), mix(C.neg, C.mid, 0.66), mix(C.neg, C.mid, 0.33), C.mid, mix(C.pos, C.mid, 0.33), mix(C.pos, C.mid, 0.66), mix(C.pos, C.mid, 1)];
-    h = `<div class="t">${NAMES[S.party]}: change in share (points)</div>${ramp(cols)}<div class="ends"><span>−15 loss</span><span>0</span><span>gain +15</span></div>`;
+    h = `<div class="t">${NAMES[S.party]}: change in share (points)</div><div class="extra">${ramp(cols)}<div class="ends"><span>−15 loss</span><span>0</span><span>gain +15</span></div></div>`;
   } else if (cb === 'turnout') {
     h = `<div class="t">Turnout (valid votes ÷ registered)</div>${ramp(SEQ.map((t) => seqColour(C.accent, t)))}<div class="ends"><span>20%</span><span>45%</span><span>70%+</span></div>`;
   } else if (cb === 'progress') {
@@ -772,10 +787,10 @@ function renderLegend() {
     W.forEach((w, i) => { const inf = wardInfo(i); if (inf) ks.add(G[cb === 'nowcast' && inf.est ? inf.estK : inf.k]); });
     const items = G.filter((g) => ks.has(g)).map((g) => `<span class="row" style="display:inline-flex;gap:5px;align-items:center"><span class="sw" style="background:${pc(g)}"></span>${NAMES[g]}</span>`).join('');
     const scale = S.mode === 'projection' || cb === 'nowcast' ? ['Toss-up', 'Lean', 'Likely', 'Safe'] : S.mode === 'live' ? ['Close', 'Leading', 'Clear', 'Won'] : ['<5', '5–15', '15–30', '30+ pts'];
-    const strength = `<div class="ramp" style="width:180px">${STRENGTH.map((t) => `<span style="background:${mix(C.ink3, C.bg, t)}"></span>`).join('')}</div><div class="ends" style="width:180px">${scale.map((s) => `<span>${s}</span>`).join('')}</div>`;
+    const strength = `<div class="extra"><div class="ramp" style="width:180px">${STRENGTH.map((t) => `<span style="background:${mix(C.ink3, C.bg, t)}"></span>`).join('')}</div><div class="ends" style="width:180px">${scale.map((s) => `<span>${s}</span>`).join('')}</div></div>`;
     const title = S.mode === 'projection' ? 'Projected favourite · shade = confidence' : cb === 'nowcast' ? 'Projected winner · shade = confidence' : S.mode === 'live' ? 'Leading party · shade = how settled' : 'Winning party · shade = margin';
     h = `<div class="t">${title}</div><div class="items">${items}</div>${strength}`;
-    if (S.mode === 'live' && (!S.live || !S.live.vdsCounted) && S.tl == null) h += '<div class="muted" style="margin-top:4px">No results yet: pale shading shows the poll projection.</div>';
+    if (S.mode === 'live' && (!S.live || !S.live.vdsCounted) && S.tl == null) h += '<div class="muted extra" style="margin-top:4px">No results yet: pale shading shows the poll projection.</div>';
   }
   el.innerHTML = h;
 }
@@ -922,6 +937,7 @@ function render() {
   if (S.mode === 'live') h += liveSections();
   else if (S.mode === 'projection') h += projSections();
   else h += resultSections();
+  h += wardTable();
   h += footer();
   const scroll = rail.scrollTop;
   rail.innerHTML = h;
@@ -930,6 +946,12 @@ function render() {
   themeLabel();
 }
 
+const CLOSE = Date.parse('2026-11-04T19:00:00Z');   // 21:00 SAST
+function closeIn() { return CLOSE - Date.now(); }
+function closeLabel() {
+  const m = Math.max(0, Math.round(closeIn() / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+}
 function renderStatus() {
   const L = S.live;
   let h = '';
@@ -939,8 +961,9 @@ function renderStatus() {
   else h = `<span class="pill live">Counting</span>`;
   if (L && L.vdsCounted) h += `<span class="num">${pct(L.vdsCounted / (L.vdsTotal || 1), 0)} of VDs</span>`;
   if (L && L.updated) h += `<span class="when">Updated ${timeSAST(L.updated)} SAST</span>`;
-  else if (L && L.fetched) h += `<span class="when">Checked ${timeSAST(L.fetched)}</span>`;
+  else if (closeIn() > 0) h += `<span class="when">Polls close in ${closeLabel()}</span>`;
   $('#status').innerHTML = h;
+  const dot = $('#tab-live .dot'); if (dot) dot.classList.toggle('on', !!(!S.rehearsal && L && L.vdsCounted && L.status !== 'final'));
 }
 
 function wardSection() {
@@ -963,7 +986,7 @@ function wardSection() {
   } else if (S.mode === 'projection') {
     const g = G[inf.k];
     const flip = prev && prev.k !== inf.k ? ` · would gain from ${NAMES[G[prev.k]]}` : '';
-    call = callBox(g, `${ratingLabel(inf.prob)} ${NAMES[g]}${flip}`, `${pp(inf.prob)} win chance in ${N_SIMS.toLocaleString()} simulations · projected margin ${fmt(inf.margin * 100)} pts`, STRENGTH[strengthOfProb(inf.prob)]);
+    call = callBox(g, `${ratingLabel(inf.prob)} ${NAMES[g]}${flip}`, `${pp(inf.prob)} win chance in ${S.proj.nSims.toLocaleString()} simulations · projected margin ${fmt(inf.margin * 100)} pts`, STRENGTH[strengthOfProb(inf.prob)]);
   } else if (inf.sh) {
     const g = G[inf.k];
     call = callBox(g, `${NAMES[g]} won`, `${S.st.elections[S.past].label} · margin ${fmt(inf.margin * 100)} pts over ${NAMES[G[inf.k2]]}${inf.cov < 0.999 ? ` · ${pct(inf.cov, 0)} of today's VDs existed then` : ''}`, 1);
@@ -996,7 +1019,7 @@ function wardSection() {
       }).join('')}</tbody></table></div></details>`;
   }
   return `<section class="sec" aria-label="Ward ${w.no}">
-    <div class="wardhead"><span class="wn">${w.no}</span>
+    <div class="wardhead"><h2 class="wn" aria-label="Ward ${w.no}">${w.no}</h2>
       <div class="meta"><span class="eyebrow">Ward ${w.no} · ${esc(w.id)}</span>
         <span>${fmt(w.km2, w.km2 < 10 ? 1 : 0)} km² · ${w.nvd} voting districts${w.cands ? ` · ${w.cands} candidates` : ''}</span>
         ${w.places && w.places.length ? `<span>${esc(w.places.slice(0, 6).join(', '))}</span>` : ''}</div>
@@ -1027,9 +1050,9 @@ function liveSections() {
   const counted = L ? L.vdsCounted : 0;
   let h = '';
   if (!counted) {
-    const err = S.live && S.live.error && !S.rehearsal ? `<p class="note">Last check: ${esc(S.live.error)}${S.live.fetched ? ` (${timeSAST(S.live.fetched, true)})` : ''}.</p>` : '';
+    const err = S.live && S.live.error && !S.rehearsal && closeIn() <= 0 ? `<p class="note">Last check${S.live.fetched ? ` at ${timeSAST(S.live.fetched, true)}` : ''}: ${esc(S.live.error)}.</p>` : '';
     h += `<section class="sec"><h2>Live count</h2>
-      <p class="note">Polls close at <b>21:00 on Wednesday 4 November</b>. The IEC publishes results per voting district as each one is captured; this page checks every minute and updates the map as Tshwane's ${total} voting districts report.</p>
+      <p class="note">${closeIn() > 0 ? `Polls close at <b>21:00 tonight</b>, in ${closeLabel()}. ` : 'Polls have closed; counting is under way. '}The IEC publishes results per voting district as each is captured. This page checks every minute and fills in the map as Tshwane's ${total} voting districts report.</p>
       <div class="progress"><div class="track"><div class="fill" style="width:0%"></div></div><div class="meta"><span>0 of ${total} voting districts</span><span>0%</span></div></div>
       ${err}
       <div class="btnrow"><button class="btn" id="rehearse">Run a rehearsal count</button></div>
@@ -1072,7 +1095,7 @@ function liveSections() {
     return a !== b ? { w, from: b, to: a, done: x.n >= (x.N || w.nvd) } : null;
   }).filter(Boolean);
   h += `<section class="sec"><h2>Wards <span class="aside">leading or won</span></h2>${wardStrip(lead)}
-    ${flips.length ? `<h3>Changing hands vs 2021 (${flips.length})</h3><div class="tbl-wrap"><table class="t"><tbody>${flips.slice(0, 30).map((f) => `<tr class="click" data-ward="${f.w.id}"><td>Ward ${f.w.no}</td><td><span class="sw" style="background:${pc(G[f.to])}"></span> ${NAMES[G[f.to]]} ${f.done ? 'gain' : 'ahead'}</td><td class="muted">from ${NAMES[G[f.from]]}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">No ward is changing hands from 2021 so far.</p>'}
+    ${flips.length ? `<h3>Changing hands vs 2021 (${flips.length})</h3><div class="tbl-wrap"><table class="t"><tbody>${flips.slice(0, 30).map((f) => `<tr class="click" data-ward="${f.w.id}"><td><button class="linkbtn" data-ward="${f.w.id}">Ward ${f.w.no}</button></td><td><span class="sw" style="background:${pc(G[f.to])}"></span> ${NAMES[G[f.to]]} ${f.done ? 'gain' : 'ahead'}</td><td class="muted">from ${NAMES[G[f.from]]}</td></tr>`).join('')}</tbody></table></div>` : '<p class="note">No ward is changing hands from 2021 so far.</p>'}
   </section>`;
   h += feedSection();
   return h;
@@ -1121,7 +1144,7 @@ function projSummary(compact) {
       <p class="note">${Object.entries(rat).map(([r, n]) => `${r} <b>${n}</b>`).join(' · ')}</p>
       <h3>Closest wards</h3><div class="tbl-wrap"><table class="t"><thead><tr><th>Ward</th><th>Favourite</th><th class="r">Chance</th><th>2021</th></tr></thead><tbody>
       ${close.map(({ w, i }) => { const f = fav[i], h21 = w.h.lge2021_ward ? winner(shares(w.h.lge2021_ward.v)).k : null;
-        return `<tr class="click" data-ward="${w.id}"><td>Ward ${w.no}</td><td><span class="sw" style="background:${pc(G[f])}"></span> ${NAMES[G[f]]}</td><td class="r">${pp(p.winProb[i][f])}</td><td class="muted">${h21 != null ? NAMES[G[h21]] : '–'}</td></tr>`; }).join('')}
+        return `<tr class="click" data-ward="${w.id}"><td><button class="linkbtn" data-ward="${w.id}">Ward ${w.no}</button></td><td><span class="sw" style="background:${pc(G[f])}"></span> ${NAMES[G[f]]}</td><td class="r">${pp(p.winProb[i][f])}</td><td class="muted">${h21 != null ? NAMES[G[h21]] : '–'}</td></tr>`; }).join('')}
       </tbody></table></div></section>`;
   }
   return h;
@@ -1181,6 +1204,26 @@ function resultSections() {
   return h;
 }
 
+function wardTable() {
+  const rows = W.map((w, i) => {
+    const inf = wardInfo(i);
+    if (!inf || !inf.sh) return { w, k: null };
+    const live = S.mode === 'live';
+    const k = live && inf.status === 'awaiting' ? null : inf.k;
+    const val = S.mode === 'projection' ? pp(inf.prob) : live && inf.status === 'awaiting' ? '' : fmt(inf.margin * 100);
+    const st = live ? (inf.status === 'awaiting' ? `0/${inf.N}` : `${inf.n}/${inf.N}`) : '';
+    const h21 = w.h.lge2021_ward ? winner(shares(w.h.lge2021_ward.v)).k : null;
+    return { w, k, s: k != null ? inf.sh[k] : null, val, st, h21 };
+  });
+  const head = S.mode === 'projection' ? ['Favourite', 'Chance'] : S.mode === 'live' ? ['Leading', 'Lead (pts)'] : ['Winner', 'Margin (pts)'];
+  return `<section class="sec"><details id="wardtable"${S.tableOpen ? ' open' : ''}><summary>All ${W.length} wards as a table</summary>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>Ward</th><th>${head[0]}</th><th class="r">Share</th><th class="r">${head[1]}</th>${S.mode === 'live' ? '<th class="r">VDs</th>' : ''}<th>2021</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr class="click" data-ward="${r.w.id}"><td><button class="linkbtn" data-ward="${r.w.id}">${r.w.no}</button></td>
+      <td>${r.k != null ? `<span class="sw" style="background:${pc(G[r.k])}"></span> ${NAMES[G[r.k]]}` : '<span class="muted">Not counted</span>'}</td>
+      <td class="r">${r.s != null ? pct(r.s, 0) : ''}</td><td class="r">${r.val || ''}</td>${S.mode === 'live' ? `<td class="r">${r.st}</td>` : ''}
+      <td class="muted">${r.h21 != null ? NAMES[G[r.h21]] : '–'}</td></tr>`).join('')}
+    </tbody></table></div></details></section>`;
+}
 function footer() {
   return `<footer class="foot">
     <div>Sources: <a href="https://results.elections.org.za/" target="_blank" rel="noopener">IEC results</a> (per voting district), <a href="https://spatialhub-mdb-sa.opendata.arcgis.com/" target="_blank" rel="noopener">Municipal Demarcation Board</a> 2026 wards, Tshwane polls by Ipsos, SRF/The Common Sense, MarkData/eNCA and SABI/News24. Not affiliated with the IEC or any party.</div>
@@ -1210,6 +1253,7 @@ function select(id, fly) {
   writeHash();
   restyle(); render();
   $('#rail').scrollTop = 0;
+  if (fly && S.view === 'geo' && layers[WI[id]]) userMoved = true;
   if (fly && S.view === 'geo' && layers[WI[id]]) map.fitBounds(layers[WI[id]].getBounds(), { maxZoom: 13, padding: [40, 40] });
   if (window.matchMedia('(max-width: 860px)').matches) $('#rail').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -1251,6 +1295,7 @@ function bind() {
     if (t.closest('#resetpolls')) { S.override = null; recompute(); return; }
     if (t.closest('#theme')) { cycleTheme(); }
   });
+  $('#rail').addEventListener('toggle', (e) => { if (e.target.id === 'wardtable') S.tableOpen = e.target.open; }, true);
   let slTimer;
   $('#rail').addEventListener('input', (e) => {
     const t = e.target;
@@ -1260,8 +1305,9 @@ function bind() {
     if (!S.override) { S.override = {}; POLLED.forEach((g) => { S.override[g] = S.proj.T[GI[g]] * 100; }); }
     S.override[t.dataset.party] = +t.value;
     clearTimeout(slTimer);
-    slTimer = setTimeout(() => recompute(true), 120);
+    slTimer = setTimeout(() => recompute(true, true), 60);
   });
+  $('#rail').addEventListener('change', (e) => { if (e.target.dataset.party) { clearTimeout(slTimer); recompute(true); } });
   // search
   const q = $('#q'), res = $('#qres');
   let hits = [], cur = -1;
@@ -1430,8 +1476,8 @@ async function refreshLive(first) {
   }
 }
 
-function recompute(keepSliders) {
-  S.proj = project();
+function recompute(keepSliders, quick) {
+  S.proj = project(quick ? 150 : N_SIMS);
   S._pri = null;
   S.now = nowcast(S.live);
   restyle();
@@ -1459,7 +1505,7 @@ async function boot() {
   $('#party').innerHTML = G.filter((g) => g !== 'OTH').map((g) => `<option value="${g}"${g === S.party ? ' selected' : ''}>${NAMES[g]}</option>`).join('');
   S.proj = project();
   await refreshLive(true);
-  if (!readHash()) S.mode = S.live && S.live.vdsCounted ? 'live' : (Date.now() < Date.parse('2026-11-04T19:00:00Z') ? 'projection' : 'live');
+  if (!readHash()) S.mode = 'live';
   initMap(); initHex();
   bind(); baseUI();
   setMode(S.mode, true);
