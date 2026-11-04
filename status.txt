@@ -1,0 +1,11 @@
+200 3971B /
+200 89963B /assets/app.js
+200 20557B /assets/style.css
+200 147552B /vendor/leaflet/leaflet.js
+200 14806B /vendor/leaflet/leaflet.css
+200 345013B /data/static.json
+200 160803B /data/wards.geojson
+200 689701B /data/vds.geojson
+200 430B /data/live.json
+200 2B /data/live-history.json
+app.js uses OpenFreeMap: 2
