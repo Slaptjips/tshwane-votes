@@ -1,0 +1,44 @@
+name: Site check
+
+# Loads the published GitHub Pages site from a runner: HTTP status of every file, headless-Chrome
+# screenshots (desktop + phone) and browser console output. Results go to the `site-check` branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+    steps:
+      - name: Request files
+        run: |
+          mkdir out
+          for p in "" assets/app.js assets/style.css vendor/leaflet/leaflet.js vendor/leaflet/leaflet.css \
+                   data/static.json data/wards.geojson data/vds.geojson data/live.json data/live-history.json; do
+            curl -s -o /dev/null -w "%{http_code} %{size_download}B /$p\n" "$BASE/$p?cb=$GITHUB_RUN_ID" | tee -a out/status.txt
+          done
+          curl -s "$BASE/data/live.json?cb=$GITHUB_RUN_ID" > out/live.json
+      - name: Render in Chrome
+        run: |
+          shot() {
+            google-chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars --enable-logging=stderr --v=0 \
+              --window-size="$1" --virtual-time-budget=20000 "${@:3}" "$BASE/?cb=$GITHUB_RUN_ID" 2>>"out/console-$2.txt" || true
+          }
+          shot 1440,900 desktop --screenshot=out/desktop.png
+          shot 390,844 mobile --screenshot=out/mobile.png
+          shot 1440,900 dom --dump-dom > out/dom.html
+          grep -h "CONSOLE\|Uncaught" out/console-*.txt | grep -v "ERR_\|favicon" > out/console.txt || true
+          wc -c out/*
+      - name: Save results to the site-check branch
+        run: |
+          cd out
+          git init -q -b site-check
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            add . && git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -qm "Site check $(date -u +%FT%TZ)"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" site-check
