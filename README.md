@@ -55,10 +55,9 @@ python3 pipeline/live.py                      # fetch the live IEC file once
 python3 pipeline/live.py --src FILE_OR_URL    # any IEC-format CSV (e.g. the 2021 file, for testing)
 ```
 
-**Hosting:** Cloudflare Pages, https://tshwane-votes.pages.dev. `.github/workflows/deploy.yml` publishes `docs/` on every
-site change, and the live-results job redeploys after each data commit. Both need two repository secrets:
-`CLOUDFLARE_API_TOKEN` (custom token with Account → Cloudflare Pages → Edit) and `CLOUDFLARE_ACCOUNT_ID`.
-GitHub Pages (`main` → `/docs`) also works with no secrets.
+**Hosting:** Cloudflare Workers (static assets), connected to this repository. Every push to `main`,
+including the live-results commits, triggers a Cloudflare build that publishes `docs/` (see `wrangler.jsonc`).
+No GitHub secrets are needed.
 
 **Election night:** `.github/workflows/live-results.yml` runs every 5 minutes from 19:00 SAST on 4 Nov to
 7 Nov (scheduled workflows only run on the default branch). If the IEC changes its file location, run the

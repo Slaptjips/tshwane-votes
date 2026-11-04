@@ -6,9 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: "Site URL to check"
-        required: false
-        default: https://tshwane-votes.pages.dev
+        description: "Site URL to check (no trailing slash)"
+        required: true
 
 permissions:
   contents: write
@@ -19,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      BASE: ${{ inputs.url || 'https://tshwane-votes.pages.dev' }}
+      BASE: ${{ inputs.url }}
     steps:
       - name: Pages configuration
         env:
