@@ -36,10 +36,11 @@ jobs:
             curl -s -o /dev/null -w "%{http_code} %{size_download}B /$p\n" "$BASE/$p?cb=$GITHUB_RUN_ID" | tee -a out/status.txt
           done
           curl -s "$BASE/data/live.json?cb=$GITHUB_RUN_ID" > out/live.json
+          echo "app.js uses OpenFreeMap: $(curl -s "$BASE/assets/app.js?cb=$GITHUB_RUN_ID" | grep -c openfreemap)" | tee -a out/status.txt
       - name: Render in Chrome
         run: |
           shot() {
-            google-chrome --headless=new --no-sandbox --disable-gpu --hide-scrollbars --enable-logging=stderr --v=0 \
+            google-chrome --headless=new --no-sandbox --enable-unsafe-swiftshader --use-angle=swiftshader --hide-scrollbars --enable-logging=stderr --v=0 \
               --window-size="$1" --virtual-time-budget=20000 "${@:3}" "$BASE/?cb=$GITHUB_RUN_ID" 2>>"out/console-$2.txt" || true
           }
           shot 1440,900 desktop --screenshot=out/desktop.png

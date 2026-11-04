@@ -137,6 +137,7 @@ a { color: var(--accent); }
 #hex { overflow: hidden; display: flex; align-items: center; justify-content: center; }
 #hex svg { position: absolute; top: 52px; left: 12px; width: calc(100% - 24px); height: calc(100% - 150px); }
 .leaflet-container { font: inherit; background: var(--map-bg); }
+#map.base-dark .leaflet-gl-layer { filter: invert(1) hue-rotate(180deg) brightness(.82) contrast(.92); }
 .leaflet-control-attribution { font-size: 10px; background: color-mix(in srgb, var(--surface) 80%, transparent) !important; color: var(--ink-3); }
 .leaflet-control-attribution a { color: var(--ink-2); }
 .leaflet-bar a { background: var(--surface); color: var(--ink); border-color: var(--line); }

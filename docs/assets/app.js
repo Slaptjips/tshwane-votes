@@ -551,7 +551,6 @@ let map, wardLayer, labelLayer, placeLayer, tiles, layers = [], labelMarkers = [
 function initMap() {
   map = L.map('map', { zoomControl: true, attributionControl: true, preferCanvas: false, zoomSnap: 0.25, minZoom: 8, maxZoom: 16 });
   map.attributionControl.setPrefix(false);
-  setTiles();
   wardLayer = L.geoJSON(S.geo, {
     style: () => ({ weight: 0.8, color: C.edge, fillOpacity: 0.9 }),
     onEachFeature: (f, lyr) => {
@@ -565,6 +564,7 @@ function initMap() {
     },
   }).addTo(map);
   map.fitBounds(wardLayer.getBounds(), { padding: [10, 10] });
+  setTiles();
   map.on('dragstart zoomstart', (e) => { if (!fitting) userMoved = true; });
   if (window.ResizeObserver) new ResizeObserver(() => {
     map.invalidateSize();
@@ -605,19 +605,35 @@ function labelVisibility() {
   }
 }
 let tileErrors = 0, tileLoads = 0;
+const BASE_STYLE = 'https://tiles.openfreemap.org/styles/positron';
+function webglOK() {
+  try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) { return false; }
+}
+function baseFailed() {
+  // no street map available (no WebGL, blocked host): fall back to the plain map for this visit
+  S.base = false; tileErrors = 99;
+  if (tiles) { map.removeLayer(tiles); tiles = null; }
+  $('#basectrl').hidden = true; baseUI(); restyle();
+}
 function setTiles() {
-  if (tiles) { tiles.remove(); tiles = null; }
-  if (!S.base) return;
-  const style = C.dark ? 'dark_all' : 'light_all';
-  tiles = L.tileLayer(`https://{s}.basemaps.cartocdn.com/${style}/{z}/{x}/{y}{r}.png`, {
-    subdomains: 'abcd', maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-  });
-  tiles.on('tileload', () => { tileLoads++; });
-  tiles.on('tileerror', () => {
-    tileErrors++;
-    if (tileErrors > 6 && tileLoads === 0) { S.base = false; setTiles(); $('#basectrl').hidden = true; restyle(); }
+  // OpenFreeMap vector tiles (free, no key) drawn by MapLibre inside Leaflet; labels come from our own layer
+  if (!S.base) { if (tiles) { map.removeLayer(tiles); tiles = null; } return; }
+  $('#map').classList.toggle('base-dark', !!C.dark);
+  if (tiles) return;
+  if (!window.maplibregl || !L.maplibreGL || !webglOK()) { baseFailed(); return; }
+  tiles = L.maplibreGL({
+    style: BASE_STYLE, interactive: false, attributionControl: false,
+    attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
   });
   tiles.addTo(map);
+  const gl = tiles.getMaplibreMap();
+  if (!gl) { baseFailed(); return; }
+  gl.on('load', () => {
+    tileLoads++;
+    for (const l of gl.getStyle().layers) if (l.type === 'symbol') gl.setLayoutProperty(l.id, 'visibility', 'none');
+  });
+  gl.on('error', () => { tileErrors++; if (!tileLoads && tileErrors >= 2) baseFailed(); });
+  setTimeout(() => { if (!tileLoads && S.base) baseFailed(); }, 12000);
 }
 function styleWard(i) {
   const lyr = layers[i]; if (!lyr) return;
@@ -1279,7 +1295,7 @@ function bind() {
   $('#v-hex').addEventListener('click', () => setView('hex'));
   $('#l-w').addEventListener('click', () => toggleVDs(false));
   $('#l-vd').addEventListener('click', () => toggleVDs(true));
-  $('#b-on').addEventListener('click', () => { S.base = true; baseUI(); setTiles(); restyle(); });
+  $('#b-on').addEventListener('click', () => { if (tileErrors >= 99) return; S.base = true; baseUI(); setTiles(); restyle(); });
   $('#b-off').addEventListener('click', () => { S.base = false; baseUI(); setTiles(); restyle(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.sel) { S.sel = null; writeHash(); restyle(); render(); } });
   $('#rail').addEventListener('click', (e) => {
@@ -1345,7 +1361,7 @@ function baseUI() { $('#b-on').setAttribute('aria-pressed', String(S.base)); $('
 function setView(v) {
   S.view = v;
   $('#v-geo').setAttribute('aria-pressed', String(v === 'geo')); $('#v-hex').setAttribute('aria-pressed', String(v === 'hex'));
-  $('#map').hidden = v !== 'geo'; $('#hex').hidden = v !== 'hex'; $('#basectrl').hidden = v !== 'geo' || (tileErrors > 6 && !tileLoads);
+  $('#map').hidden = v !== 'geo'; $('#hex').hidden = v !== 'hex'; $('#basectrl').hidden = v !== 'geo' || tileErrors >= 99;
   $('#lvlctrl').hidden = v !== 'geo';
   if (v === 'geo') setTimeout(() => map.invalidateSize(), 0);
   restyle();

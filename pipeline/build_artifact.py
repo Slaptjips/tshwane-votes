@@ -18,6 +18,8 @@ out = f"""{title}
 <style>html, body {{ height: 100%; }}</style>
 {body}
 <script src="vendor/leaflet/leaflet.js"></script>
+<script src="vendor/maplibre/maplibre-gl.js"></script>
+<script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
 <script src="assets/app.js"></script>
 """
 Path(sys.argv[1]).write_text(out)
